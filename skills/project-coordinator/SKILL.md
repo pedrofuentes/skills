@@ -2,7 +2,7 @@
 name: project-coordinator
 description: "Autonomous project coordinator for executing plans by delegation. Use when the user wants to run implementation, not do it: read a roadmap/PRD/AGENTS.md/backlog, break work into tasks, spawn sub-agents, parallelize independent tasks, verify merges, track progress. Trigger on requests to coordinate the project, manage implementation, execute the roadmap/plan, farm out work to agents, orchestrate parallel tasks/fleet mode, or act as a coordinator who doesn't write code. Signals: 'delegate everything', 'spawn agents', 'verify after merge', 'manage the pipeline', 'coordinate the execution', 'execute this plan', 'review this plan and coordinate'. DO trigger when the user provides an existing plan, backlog, roadmap, or issue list and wants it executed or coordinated - even if they say 'review the plan' (review-to-execute, not review-to-create). Do NOT trigger for writing plans from scratch, writing code/tests, setting up AGENTS.md, refactoring, CI/CD config, or PR review."
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: pedrofuentes
 ---
 
@@ -77,6 +77,8 @@ For each task, spawn a **`general-purpose` sub-agent** with a self-contained pro
 | 3 | Opus | STOP → escalate to user |
 
 NEVER attempt 4. NEVER retry twice at a tier that already failed.
+
+**Sentinel rejection override:** When a sub-agent's work is REJECTED by Sentinel, skip the normal retry ladder. Immediately spawn a new agent using the **highest-capability model available** and include the full rejection report (see §ERROR). Sentinel rejections indicate quality/correctness issues that benefit from stronger reasoning — do not waste an attempt at the same tier.
 
 Include in every sub-agent prompt:
 - The specific goal and acceptance criteria
@@ -204,7 +206,7 @@ When a sub-agent fails, follow this ladder. ALWAYS clean up the failed agent's b
 | Failure | Action | Escalation |
 |---------|--------|------------|
 | **Wrong output** | Spawn NEW agent with corrected prompt + what went wrong. NEVER reuse failed agent. | Same tier once → Opus → user (see §2-DELEGATE retry table) |
-| **Sentinel REJECTED** | New agent with original prompt + Sentinel feedback as `## Review Feedback` | 3 total rejections → user |
+| **Sentinel REJECTED** | Spawn NEW agent using the **highest-capability model available** with: (1) the original task prompt, (2) a `## Sentinel Review — REJECTED` section containing the **full, unedited rejection report**. The higher-capability model + complete rejection context maximizes the chance of a correct fix. | 3 total rejections → user |
 | **Agent timeout** | Check for branch. Substantial progress → new agent finishes it. No progress → clean up, respawn. | 2 timeouts → user |
 | **Off-scope** (modified undeclared files) | NEVER merge. Clean up. Respawn with tighter constraints. | 2 off-scope → user |
 | **Merged task broke main** | `git revert <merge-commit>` (NEVER `git reset` on main). Diagnose. Respawn. Update §8-PERSIST. | Reverted twice → user |
@@ -273,5 +275,5 @@ If anything feels unclear, re-read §0 ABSOLUTE RULES at the top.
 6. **§8-PERSIST:** Update SQL todos after EVERY state change. DB survives; context doesn't.
 7. **§9-PAUSE:** Every 5 tasks → checkpoint with user. NEVER add tasks silently.
 8. **§FORBIDDEN:** A1–C2 require explicit user approval THIS TURN. No exceptions.
-9. **§ERROR:** ALWAYS clean up failed agent's environment before retry. Retry ladder: same tier → Opus → user.
+9. **§ERROR:** ALWAYS clean up failed agent's environment before retry. Retry ladder: same tier → Opus → user. **Sentinel rejections:** skip ladder → highest-capability model + full rejection report.
 10. **AGENTS.md is law.** If missing or incomplete: STOP. Do not default.
