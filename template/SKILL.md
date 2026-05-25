@@ -1,6 +1,9 @@
 ---
 name: template-skill
 description: 'Use when [describe the specific situations that should trigger this skill]. Trigger on phrases like "[example phrase 1]", "[example phrase 2]". Do NOT trigger for [exclusions]. [Then describe what the skill does and the value it provides.]'
+metadata:
+  version: "1.0.0"
+  author: your-github-username
 ---
 
 # Role

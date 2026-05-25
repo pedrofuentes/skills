@@ -1,6 +1,9 @@
 ---
 name: project-coordinator
 description: "Autonomous project coordinator for executing plans by delegation. Use when the user wants to run implementation, not do it: read a roadmap/PRD/AGENTS.md/backlog, break work into tasks, spawn sub-agents, parallelize independent tasks, verify merges, track progress. Trigger on requests to coordinate the project, manage implementation, execute the roadmap/plan, farm out work to agents, orchestrate parallel tasks/fleet mode, or act as a coordinator who doesn't write code. Signals: 'delegate everything', 'spawn agents', 'verify after merge', 'manage the pipeline', 'coordinate the execution', 'execute this plan', 'review this plan and coordinate'. DO trigger when the user provides an existing plan, backlog, roadmap, or issue list and wants it executed or coordinated - even if they say 'review the plan' (review-to-execute, not review-to-create). Do NOT trigger for writing plans from scratch, writing code/tests, setting up AGENTS.md, refactoring, CI/CD config, or PR review."
+metadata:
+  version: "1.0.0"
+  author: pedrofuentes
 ---
 
 # Role: Project Coordinator

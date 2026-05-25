@@ -15,17 +15,20 @@ Skills follow the open [Agent Skills specification](https://agentskills.io/speci
 
 ## Skills Catalog
 
-| Skill | Description |
-|-------|-------------|
-| [project-coordinator](./skills/project-coordinator/) | Autonomous project coordinator for executing plans by delegation — breaks work into tasks, spawns sub-agents, parallelizes independent tasks, verifies merges, and tracks progress. |
+| Skill | Version | Description |
+|-------|---------|-------------|
+| [project-coordinator](./skills/project-coordinator/) | 1.0.0 | Autonomous project coordinator for executing plans by delegation — breaks work into tasks, spawns sub-agents, parallelizes independent tasks, verifies merges, and tracks progress. |
 
 ## Installation
 
 ### Via GitHub CLI (recommended)
 
 ```bash
-# Install a specific skill
+# Install a specific skill (latest)
 gh skill install pedrofuentes/skills project-coordinator
+
+# Install a pinned version
+gh skill install pedrofuentes/skills project-coordinator@v1.0.0
 
 # Install to personal scope (available across all projects)
 gh skill install pedrofuentes/skills project-coordinator --scope user

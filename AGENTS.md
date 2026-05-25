@@ -42,6 +42,18 @@ All skills MUST comply with the [Agent Skills spec](https://agentskills.io/speci
 | `compatibility` | ❌ | Max 500 chars. Environment requirements |
 | `metadata` | ❌ | Arbitrary YAML map (author, version, tags, etc.) |
 
+### Versioning Policy
+
+All skills MUST include `metadata.version` using [Semantic Versioning](https://semver.org/):
+
+| Bump | When |
+|------|------|
+| **Major** (2.0.0) | Breaking changes to trigger behavior — description changes that alter when the skill activates, or instruction changes that fundamentally change the skill's approach |
+| **Minor** (1.1.0) | New capabilities, sections, or features added to instructions without breaking existing behavior |
+| **Patch** (1.0.1) | Bug fixes, wording improvements, typo corrections, clarifications that don't change behavior |
+
+Skills start at `1.0.0`. Users can pin versions with `gh skill install owner/repo skill@v1.2.0`.
+
 ### Naming Convention
 
 - Folder names: **lowercase with hyphens** (e.g., `project-coordinator`)
@@ -88,8 +100,9 @@ The `description` field drives skill discovery. It should:
 
 5. **Verify:**
    - Folder name matches `name` field
-   - `description` is 10–1024 chars with trigger keywords
+   - [ ] `description` is 10–1024 chars with trigger keywords
    - SKILL.md body is < 500 lines
+      - `metadata.version` is set (semver, starting at `1.0.0`)
    - All asset files are < 5MB
    - All bundled assets are referenced in SKILL.md instructions
 
@@ -99,6 +112,7 @@ Before committing changes to any skill:
 
 - [ ] `name` field is lowercase, hyphens only, ≤ 64 chars, matches folder name
 - [ ] `description` is 1–1024 chars (≥ 10 recommended) with clear trigger/exclusion keywords
+- [ ] `metadata.version` is set (semver, starting at `1.0.0`)
 - [ ] Folder name is lowercase with hyphens
 - [ ] SKILL.md body is < 500 lines
 - [ ] Bundled assets are referenced in SKILL.md instructions

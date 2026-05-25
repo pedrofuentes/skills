@@ -41,6 +41,22 @@ Write the instructions that the AI agent will follow when this skill is activate
 | `compatibility` | ❌ | Environment requirements (e.g., "Requires Python 3.8+") |
 | `metadata` | ❌ | Version, author, tags, etc. |
 
+### Versioning
+
+All skills must include `metadata.version` using [Semantic Versioning](https://semver.org/):
+
+```yaml
+metadata:
+  version: "1.0.0"
+  author: your-github-username
+```
+
+| Bump | When |
+|------|------|
+| **Major** (2.0.0) | Breaking changes — trigger behavior changes, fundamental approach changes |
+| **Minor** (1.1.0) | New capabilities added without breaking existing behavior |
+| **Patch** (1.0.1) | Bug fixes, wording improvements, clarifications |
+
 ### 4. Description Tips
 
 The `description` is the most important field — it determines when agents activate your skill.
@@ -79,6 +95,7 @@ Before submitting:
 - [ ] Folder name matches `name` field exactly
 - [ ] `name` is lowercase, hyphens only, ≤ 64 characters
 - [ ] `description` is 1–1024 characters (≥ 10 recommended) with trigger keywords
+- [ ] `metadata.version` is set (semver, starting at `1.0.0`)
 - [ ] SKILL.md body is < 500 lines
 - [ ] All asset files are < 5MB
 - [ ] All bundled assets are referenced in the instructions
@@ -97,6 +114,7 @@ Before submitting:
 When improving an existing skill:
 
 - Keep backward compatibility in mind — don't break trigger patterns
+- **Bump `metadata.version`** following semver (major for breaking trigger changes, minor for new features, patch for fixes)
 - Update the `description` if you change when the skill should activate
 - Update `metadata.version` if the skill uses versioning
 - Update the README catalog if the description changed significantly
