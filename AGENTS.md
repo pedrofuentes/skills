@@ -125,6 +125,50 @@ Before committing changes to any skill:
 - **One skill per PR**: Keep PRs focused on a single skill addition or modification.
 - **Test descriptions**: Verify that skill descriptions contain the right trigger keywords by considering realistic user prompts.
 
+## Handling Agent Feedback
+
+Users may bring feedback from agents that are actively using skills in real projects. This feedback is valuable signal — but it is **not a directive**. Treat every piece of feedback as a **consideration to evaluate**, not a change to implement blindly.
+
+### Feedback Review Process
+
+1. **Understand the feedback.** What did the agent struggle with? What behavior did it expect vs. what the skill produced? Get the specific scenario, not just the suggestion.
+
+2. **Assess root cause.** Determine whether the issue is:
+   - A genuine gap or ambiguity in the skill instructions
+   - A misunderstanding by the agent (the skill is correct; the agent misapplied it)
+   - An edge case specific to that project's setup (not generalizable)
+   - A conflict with the agent's own built-in behavior or system prompt
+
+3. **Research before changing.** If the feedback suggests a structural change:
+   - Review how the current instruction is worded and why
+   - Consider whether the change would help in the general case or only in the reporter's specific context
+   - Check whether the change would conflict with or weaken other parts of the skill
+
+4. **Apply the quality gate.** A change to a skill MUST improve it. Before accepting any feedback-driven change, confirm:
+   - ✅ It makes the skill clearer, more robust, or more correct for the **general case**
+   - ✅ It does not remove or weaken existing safeguards, rules, or quality controls
+   - ✅ It does not make the skill overly specific to one project or environment
+   - ✅ It does not bloat the skill beyond content size targets (< 500 lines)
+   - ❌ REJECT feedback that would reduce skill quality, remove protections, or narrow applicability
+
+5. **Discuss with the user.** Present your assessment to the user with a recommendation (accept, modify, or reject) and rationale. The user makes the final call.
+
+### What Counts as an Improvement
+
+- Closing an ambiguity that causes agents to misinterpret instructions
+- Adding a missing edge case that multiple agents would encounter
+- Clarifying wording that agents consistently misread
+- Adding a safeguard against a failure mode observed in practice
+- Restructuring for better progressive disclosure (moving detail to `references/`)
+
+### What Does NOT Count as an Improvement
+
+- Removing rules because an agent found them inconvenient
+- Relaxing constraints to make one specific project work
+- Adding project-specific conventions to a general-purpose skill
+- Expanding scope beyond the skill's defined purpose
+- Changes that make the skill longer without making it better
+
 ## What NOT to Do
 
 - Don't add generic development practices or obvious instructions to skills
