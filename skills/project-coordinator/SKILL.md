@@ -2,7 +2,7 @@
 name: project-coordinator
 description: "Autonomous project coordinator for executing plans by delegation. Use when the user wants to run implementation, not do it: read a roadmap/PRD/AGENTS.md/backlog, break work into tasks, spawn sub-agents, parallelize independent tasks, verify merges, track progress. Trigger on requests to coordinate the project, manage implementation, execute the roadmap/plan, farm out work to agents, orchestrate parallel tasks/fleet mode, or act as a coordinator who doesn't write code. Signals: 'delegate everything', 'spawn agents', 'verify after merge', 'manage the pipeline', 'coordinate the execution', 'execute this plan', 'review this plan and coordinate'. DO trigger when the user provides an existing plan, backlog, roadmap, or issue list and wants it executed or coordinated - even if they say 'review the plan' (review-to-execute, not review-to-create). Do NOT trigger for writing plans from scratch, writing code/tests, setting up AGENTS.md, refactoring, CI/CD config, or PR review."
 metadata:
-  version: "1.1.0"
+  version: "1.3.0"
   author: pedrofuentes
 ---
 
@@ -62,9 +62,11 @@ For each task, spawn a **`general-purpose` sub-agent** with a self-contained pro
 
 | Tier | Use when | NEVER when |
 |------|----------|------------|
-| **Opus** | ANY: >150 LOC, >3 files, shared interfaces/APIs, security/auth/concurrency, new patterns, 2+ deps, ambiguous specs, retry after lower-tier fail | — |
+| **Opus** | ANY: >150 LOC, >3 files, shared interfaces/APIs, security/auth/concurrency, new patterns, 2+ deps, ambiguous specs, retry after lower-tier fail, platform-specific behavior (OS/shell/path), cross-path propagation (same concern across multiple handlers/renderers), user-facing output coherence (error/retry/success flows), atomicity/TOCTOU (read-then-write sequences) | — |
 | **Sonnet** | ALL FIVE: ≤150 LOC AND ≤3 files AND local-only AND existing pattern AND simple tests | Any Opus trigger applies |
 | **Haiku** | — | NEVER for implementation agents |
+
+**Current top tier = Opus 4.8.** Wherever this skill says "Opus" or "the highest-capability model available" (e.g., the Sentinel rejection override below), use **Opus 4.8** — it is the strongest model currently available. If a newer, more capable model later supersedes it, treat that newer model as the top tier instead.
 
 **ALWAYS:** Reviewer tier ≥ implementer tier. NEVER review Opus work with Sonnet.
 
@@ -79,6 +81,16 @@ For each task, spawn a **`general-purpose` sub-agent** with a self-contained pro
 NEVER attempt 4. NEVER retry twice at a tier that already failed.
 
 **Sentinel rejection override:** When a sub-agent's work is REJECTED by Sentinel, skip the normal retry ladder. Immediately spawn a new agent using the **highest-capability model available** and include the full rejection report (see §ERROR). Sentinel rejections indicate quality/correctness issues that benefit from stronger reasoning — do not waste an attempt at the same tier.
+
+**Pre-spawn complexity check (run before EVERY spawn):**
+Before spawning, verify the tier assignment by answering these questions:
+1. Does this task touch multiple code paths that serve the same concern (e.g., multiple renderers, error handlers, both CLI and API paths)?
+2. Does the change need to be consistent across those paths to be correct?
+3. Does the task involve user-visible output across multiple states (error → retry → success)?
+4. Does the task involve read-then-write sequences where concurrent callers could race?
+5. Does the task involve platform-specific behavior (OS detection, shell commands, file paths)?
+
+If YES to any → Opus. If the assigned tier is Sonnet but you answered YES, escalate before spawning.
 
 Include in every sub-agent prompt:
 - The specific goal and acceptance criteria
@@ -124,7 +136,7 @@ Each sub-agent is responsible for:
 - Pushing the branch, invoking Sentinel, and merging on APPROVED
 - Cleaning up the isolated environment after merge
 
-The coordinator NEVER merges for sub-agents. Sentinel REJECTED 3× → escalate to user. Sub-agents may spawn sub-agents ONLY for Sentinel review — no other delegation.
+The coordinator NEVER merges for sub-agents. Sentinel REJECTED 3× → escalate to user. If Sentinel runs in **degraded/fallback mode** and offers to re-run, ALWAYS re-invoke it immediately in the correct (standard/full) mode — NEVER ask the user. Only after 3 degraded-mode runs on the SAME task → escalate to user. Sub-agents may spawn sub-agents ONLY for Sentinel review — no other delegation.
 
 ---
 
@@ -172,8 +184,7 @@ Use the session database (SQL `todos` table) to persist task state — conversat
 - T5. Any AGENTS.md "ASK FIRST" trigger (AGENTS.md is authoritative — above are examples, not exhaustive)
 - T6. Work needed that is NOT in the approved task list — NEVER add tasks silently; ALWAYS surface and request approval
 
-**Cadence trigger** (separate from above):
-- C1. Every 5 completed tasks → post checkpoint (done / next / concerns) → ask "continue / adjust / stop?"
+**Cadence:** none. **Run to completion without pausing for periodic "continue / pause / stop?" check-ins.** The entire point is to finish the whole approved task list autonomously. NEVER stop just because N tasks completed. Only the always-stop triggers above (or a §FORBIDDEN operation, or a §ERROR escalation) may interrupt execution.
 
 Default between triggers: continue autonomously.
 
@@ -207,6 +218,7 @@ When a sub-agent fails, follow this ladder. ALWAYS clean up the failed agent's b
 |---------|--------|------------|
 | **Wrong output** | Spawn NEW agent with corrected prompt + what went wrong. NEVER reuse failed agent. | Same tier once → Opus → user (see §2-DELEGATE retry table) |
 | **Sentinel REJECTED** | Spawn NEW agent using the **highest-capability model available** with: (1) the original task prompt, (2) a `## Sentinel Review — REJECTED` section containing the **full, unedited rejection report**. The higher-capability model + complete rejection context maximizes the chance of a correct fix. | 3 total rejections → user |
+| **Sentinel degraded-mode** | Sentinel ran in degraded/fallback mode and asks whether to re-run. NEVER ask the user. Immediately re-invoke Sentinel in the correct (standard/full) mode. Track the degraded-mode count per task. | 3 degraded-mode runs on the SAME task → stop and ask user |
 | **Agent timeout** | Check for branch. Substantial progress → new agent finishes it. No progress → clean up, respawn. | 2 timeouts → user |
 | **Off-scope** (modified undeclared files) | NEVER merge. Clean up. Respawn with tighter constraints. | 2 off-scope → user |
 | **Merged task broke main** | `git revert <merge-commit>` (NEVER `git reset` on main). Diagnose. Respawn. Update §8-PERSIST. | Reverted twice → user |
@@ -225,6 +237,7 @@ Key points (AGENTS.md is authoritative if these conflict):
 - ALWAYS create an isolated branch using AGENTS.md's prescribed method before any work — never commit on main
 - TDD: failing test commit FIRST, then implementation commit. Never combined.
 - Invoke Sentinel before merging. Do not merge without APPROVED verdict.
+- If Sentinel runs in degraded/fallback mode and offers to re-run, ALWAYS re-invoke it immediately in the correct (standard/full) mode — never ask. After 3 degraded-mode runs on the same task, STOP and report to the coordinator.
 - If you hit a merge conflict: rebase on main, re-test, re-invoke Sentinel.
 - Commit trailer: Co-authored-by: Copilot <175574315+pedrofuentes@users.noreply.github.com>
 
@@ -259,6 +272,7 @@ When all tasks are done (or if you stop early), present the user with:
 2. The full log of concerns, questions, and suggestions
 3. Any tasks that remain incomplete and why
 4. Recommended next steps
+5. **Tier accuracy retro** — compare model tier assigned vs actual Sentinel cycle count per task. If Sonnet tasks averaged significantly more cycles than Opus tasks, note which complexity signals were missed (cross-path propagation, concurrency, platform-specific, etc.). Present this analysis to the user as input for future tier decisions.
 
 ---
 
@@ -273,7 +287,7 @@ If anything feels unclear, re-read §0 ABSOLUTE RULES at the top.
 4. **§6-VERIFY:** ALL 7 checks after EVERY merge. ANY failure → `git revert` (NEVER `git reset` on main).
 5. **§7-CHAIN:** Pass predecessor context forward. Branch from current `main` HEAD.
 6. **§8-PERSIST:** Update SQL todos after EVERY state change. DB survives; context doesn't.
-7. **§9-PAUSE:** Every 5 tasks → checkpoint with user. NEVER add tasks silently.
+7. **§9-PAUSE:** Run to completion — NEVER pause for periodic "continue / pause / stop?" check-ins. Stop ONLY on safety triggers (T1–T6, §FORBIDDEN, §ERROR). NEVER add tasks silently.
 8. **§FORBIDDEN:** A1–C2 require explicit user approval THIS TURN. No exceptions.
-9. **§ERROR:** ALWAYS clean up failed agent's environment before retry. Retry ladder: same tier → Opus → user. **Sentinel rejections:** skip ladder → highest-capability model + full rejection report.
+9. **§ERROR:** ALWAYS clean up failed agent's environment before retry. Retry ladder: same tier → Opus → user. **Sentinel rejections:** skip ladder → highest-capability model + full rejection report. **Sentinel degraded-mode:** auto re-invoke in the correct (standard) mode, NEVER ask; 3× on the same task → user.
 10. **AGENTS.md is law.** If missing or incomplete: STOP. Do not default.
