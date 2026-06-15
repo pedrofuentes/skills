@@ -17,7 +17,7 @@ Skills follow the open [Agent Skills specification](https://agentskills.io/speci
 
 | Skill | Version | Description |
 |-------|---------|-------------|
-| [sentinel-project-coordinator](./skills/sentinel-project-coordinator/) | 2.0.0 | Autonomous project coordinator for **agents-template / Sentinel** projects — delegates all implementation to sub-agents and drives the SENTINEL.md TDD-and-review workflow: breaks work into tasks, spawns sub-agents, parallelizes, invokes Sentinel, verifies merges, tracks progress. |
+| [sentinel-project-coordinator](./skills/sentinel-project-coordinator/) | 2.1.0 | Autonomous project coordinator for **agents-template / Sentinel** projects — delegates all implementation to sub-agents and drives the SENTINEL.md TDD-and-review workflow: breaks work into tasks, spawns sub-agents, parallelizes, invokes Sentinel, verifies merges, tracks progress. |
 
 ## Installation
 
