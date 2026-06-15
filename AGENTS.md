@@ -56,7 +56,7 @@ Skills start at `1.0.0`. Users can pin versions with `gh skill install owner/rep
 
 ### Naming Convention
 
-- Folder names: **lowercase with hyphens** (e.g., `project-coordinator`)
+- Folder names: **lowercase with hyphens** (e.g., `sentinel-project-coordinator`)
 - The `name` field in SKILL.md frontmatter MUST exactly match the folder name
 - Max 64 characters
 

@@ -17,7 +17,7 @@ Skills follow the open [Agent Skills specification](https://agentskills.io/speci
 
 | Skill | Version | Description |
 |-------|---------|-------------|
-| [project-coordinator](./skills/project-coordinator/) | 2.0.0 | Autonomous project coordinator for executing plans by delegation — breaks work into tasks, spawns sub-agents, parallelizes independent tasks, verifies merges, and tracks progress. |
+| [sentinel-project-coordinator](./skills/sentinel-project-coordinator/) | 2.0.0 | Autonomous project coordinator for **agents-template / Sentinel** projects — delegates all implementation to sub-agents and drives the SENTINEL.md TDD-and-review workflow: breaks work into tasks, spawns sub-agents, parallelizes, invokes Sentinel, verifies merges, tracks progress. |
 
 ## Installation
 
@@ -25,13 +25,13 @@ Skills follow the open [Agent Skills specification](https://agentskills.io/speci
 
 ```bash
 # Install a specific skill (latest)
-gh skill install pedrofuentes/skills project-coordinator
+gh skill install pedrofuentes/skills sentinel-project-coordinator
 
 # Install a pinned version
-gh skill install pedrofuentes/skills project-coordinator@v1.0.0
+gh skill install pedrofuentes/skills sentinel-project-coordinator@v2.0.0
 
 # Install to personal scope (available across all projects)
-gh skill install pedrofuentes/skills project-coordinator --scope user
+gh skill install pedrofuentes/skills sentinel-project-coordinator --scope user
 ```
 
 > Requires [GitHub CLI](https://cli.github.com/) ≥ 2.90.0 with `gh skill` support.
@@ -46,18 +46,18 @@ Copy the skill folder to one of these locations:
 | **Personal** (all projects) | `~/.copilot/skills/<skill-name>/` or `~/.claude/skills/<skill-name>/` |
 
 ```bash
-# Example: install project-coordinator for personal use (Copilot)
-cp -r skills/project-coordinator ~/.copilot/skills/
+# Example: install sentinel-project-coordinator for personal use (Copilot)
+cp -r skills/sentinel-project-coordinator ~/.copilot/skills/
 
 # Example: install for Claude Code
-cp -r skills/project-coordinator ~/.claude/skills/
+cp -r skills/sentinel-project-coordinator ~/.claude/skills/
 ```
 
 ## Usage
 
 Once installed, skills are automatically discovered by your AI agent. Just describe what you want to do — the agent will activate the matching skill based on its description and trigger keywords.
 
-For example, with `project-coordinator` installed, simply say:
+For example, with `sentinel-project-coordinator` installed, simply say:
 > "Execute this implementation plan" or "Coordinate the project and delegate tasks"
 
 ## Creating a New Skill

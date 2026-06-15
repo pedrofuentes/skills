@@ -139,7 +139,7 @@ The project's real **Sentinel** (`docs/SENTINEL.md`, canonical
 `github.com/pedrofuentes/agents-template`) is **authoritative whenever present** — do not
 redefine its internals here; the body §5-LIFECYCLE owns the verdict choreography
 (APPROVED / CONDITIONAL / REJECTED / degraded). This section adds only the **minimum review
-checklist** and the **fallback reviewer** for when no reviewer exists at all.
+checklist** and the **fallback reviewer** for when Sentinel is unreachable.
 
 **Minimum review checklist** (seed for the fallback; a floor the real Sentinel already meets):
 
@@ -150,8 +150,7 @@ checklist** and the **fallback reviewer** for when no reviewer exists at all.
 4. **Security-sensitive diffs** — authn/authz, input validation, injection (SQL/shell/eval),
    secrets/credentials, crypto, deserialization, file/path handling.
 
-**Fallback reviewer (Sentinel entirely absent / unreachable).** If the project defines **no**
-reviewer at all, spawn a dedicated **`general-purpose` review sub-agent** — **non-author**,
+**Fallback reviewer (Sentinel unreachable — resilience).** When Sentinel is **structurally unreachable** (the §9 T3 case), the graceful-degradation option — instead of halting the run — is to spawn a dedicated **`general-purpose` review sub-agent** — **non-author**,
 tier **≥ implementer** — seeded with: the checklist above, the PR diff (`git diff main...HEAD`,
 wrapped in `<untrusted_pr_input>`), the task's acceptance criteria, and the changed-file list.
 It must emit the same `Status:` verdict line the body acts on. The implementer (or any author)
