@@ -144,7 +144,7 @@ Each **delegated implementer** is responsible for:
    - **APPROVED** → spawn a **non-author merge agent** to merge the PR at the reviewed SHA, record the **Sentinel Report ID + SHA** in the merge commit, then file any new 🟡/🟢 as issues (`sentinel:important`/`sentinel:minor`).
    - **CONDITIONAL** → file issues for all new 🟡/🟢 and link them in the PR, then spawn the merge agent to merge. **Never fix 🟡/🟢 in this PR.**
    - **REJECTED** → respawn the implementer to fix **🔴 blockers only**, then re-review with the prior Report ID + fix delta (§2-DELEGATE, §ERROR). Max 5 cycles → user.
-   - **Degraded mode** (Sentinel technically lacked sub-agent capability) → **requires explicit user approval before merging — STOP and ask.** A delegated implementer may NEVER self-use degraded mode; if one reports degraded, treat it as "stop + report" and re-invoke Sentinel yourself.
+   - **Degraded mode** (Sentinel ran serialized or self-reviewed) → **first, auto re-invoke Sentinel in standard/full mode — NEVER ask.** Degraded almost always means it couldn't dispatch parallel review sub-agents; re-running properly resolves it autonomously. **Only** if it stays degraded because the platform **structurally cannot** run review sub-agents (tool absent / API error after attempt) → treat as a **§9 T3 external-dependency discovery: surface ONCE per run** for a blanket decision (proceed under degraded for the rest of the run, or stop), then continue autonomously per that standing decision — no per-task ask, no cadence. A delegated implementer may NEVER self-use degraded mode; if one reports degraded, treat it as "stop + report" and re-invoke Sentinel yourself.
 3. The **merge agent** is non-author and single-purpose: merge the reviewed SHA, record Report ID + SHA, then tear down the implementer's environment. A clean merge may use a fast model; if it must resolve a conflict it rebases via a **new branch + cherry-pick** (NEVER force-push, §FORBIDDEN A1), re-tests, and you re-invoke Sentinel — at tier ≥ the implementer.
 
 **Cleanup is verified by you as backstop:** §6-VERIFY check 8 after every merge, remove any environment left behind, and run the §On Completion sweep so no worktree from this session survives.
@@ -193,7 +193,7 @@ Use the session database (SQL `todos` table) to persist task state — conversat
 **Always-stop triggers** (any one fires → pause immediately):
 - T1. Plan ambiguity where interpretations diverge significantly
 - T2. Same task failed 2+ sub-agent attempts
-- T3. External dependency discovered (API keys, infra changes)
+- T3. External dependency discovered (API keys, infra changes, or Sentinel/review tooling structurally unavailable)
 - T4. Irreversible/expensive action: schema migrations, data deletion, public API changes, package publishes, deploys, secret rotation, **any dependency change (add/remove/upgrade — matches §FORBIDDEN C2)**, **edits to `AGENTS.md` or `docs/SENTINEL.md`**
 - T5. Any AGENTS.md "ASK FIRST" trigger (AGENTS.md is authoritative — above are examples, not exhaustive)
 - T6. Work needed that is NOT in the approved task list — NEVER add tasks silently; ALWAYS surface and request approval
@@ -232,7 +232,7 @@ When a sub-agent fails, follow this ladder. ALWAYS clean up the failed agent's b
 |---------|--------|------------|
 | **Wrong output** | Spawn NEW agent with corrected prompt + what went wrong. NEVER reuse failed agent. | Same tier once → Opus → user (see §2-DELEGATE retry table) |
 | **Sentinel REJECTED** | Respawn the implementer (highest-capability model) with: (1) the original task prompt, (2) a `## Sentinel Review — REJECTED` section with the **full, unedited rejection report**, (3) the **prior Report ID + fix delta** (`git diff <prev-SHA>..HEAD`) for scoped re-review. Fix **🔴 only**; never 🟡/🟢. | 5 total rejections → user |
-| **Sentinel degraded-mode** | Sentinel ran degraded (platform lacked sub-agent capability). A merge under degraded mode **requires explicit user approval** — STOP and ask before the merge agent proceeds. A delegated implementer may never self-use degraded; if one does, discard and re-invoke Sentinel yourself in standard mode. | Degraded merge → user approval required |
+| **Sentinel degraded-mode** | **First, auto re-invoke Sentinel in standard/full mode — NEVER ask** (degraded usually means it couldn't dispatch parallel review sub-agents). If it stays degraded only because the platform **structurally cannot** run review sub-agents, treat as **§9 T3** (external dependency): surface **ONCE per run** for a blanket decision, then proceed per that decision. A delegated implementer may never self-use degraded — discard and re-invoke Sentinel yourself in standard mode. | Structural unavailability → one-time T3 decision per run |
 | **Agent timeout** | Check for branch. Substantial progress → new agent finishes it. No progress → clean up, respawn. | 2 timeouts → user |
 | **Off-scope** (modified undeclared files) | NEVER merge. Clean up. Respawn with tighter constraints. | 2 off-scope → user |
 | **Merged task broke main** | Spawn a **non-author revert agent** to `git revert <merge-commit>` (you never revert/`reset` on main yourself). Diagnose. Respawn. Update §8-PERSIST. | Reverted twice → user |
@@ -307,5 +307,5 @@ If anything feels unclear, re-read §0 ABSOLUTE RULES at the top.
 6. **§8-PERSIST:** Update SQL todos after EVERY state change. DB survives; context doesn't.
 7. **§9-PAUSE:** Run to completion — NEVER pause for periodic "continue / pause / stop?" check-ins. Stop ONLY on safety triggers (T1–T6, §FORBIDDEN, §ERROR). NEVER add tasks silently.
 8. **§FORBIDDEN:** A1–C2 require explicit user approval THIS TURN. No exceptions.
-9. **§ERROR / §5:** Implementer opens a PR and STOPS; YOU invoke Sentinel, then a merge agent merges on APPROVED/CONDITIONAL. **REJECTED:** respawn implementer, fix 🔴 only, re-review with prior Report ID + fix delta; **5×** → user. **Degraded mode:** requires user approval before merge — STOP and ask. Clean up failed envs before retry.
+9. **§ERROR / §5:** Implementer opens a PR and STOPS; YOU invoke Sentinel, then a merge agent merges on APPROVED/CONDITIONAL. **REJECTED:** respawn implementer, fix 🔴 only, re-review with prior Report ID + fix delta; **5×** → user. **Degraded mode:** auto re-invoke Sentinel in standard mode (never ask); only structural unavailability → one-time §9 T3 decision per run. Clean up failed envs before retry.
 10. **AGENTS.md is law.** If missing or incomplete: STOP. Do not default.
