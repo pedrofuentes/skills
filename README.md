@@ -17,7 +17,7 @@ Skills follow the open [Agent Skills specification](https://agentskills.io/speci
 
 | Skill | Version | Description |
 |-------|---------|-------------|
-| [project-coordinator](./skills/project-coordinator/) | 1.4.0 | Autonomous project coordinator for executing plans by delegation — breaks work into tasks, spawns sub-agents, parallelizes independent tasks, verifies merges, and tracks progress. |
+| [project-coordinator](./skills/project-coordinator/) | 2.0.0 | Autonomous project coordinator for executing plans by delegation — breaks work into tasks, spawns sub-agents, parallelizes independent tasks, verifies merges, and tracks progress. |
 
 ## Installation
 
