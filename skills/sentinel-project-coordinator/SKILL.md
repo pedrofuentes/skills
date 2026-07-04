@@ -1,8 +1,8 @@
 ---
 name: sentinel-project-coordinator
-description: "Autonomous project coordinator for **agents-template / Sentinel** projects: delegates ALL implementation to sub-agents and drives the SENTINEL.md TDD-and-review workflow end-to-end. Use when a repo uses agents-template (docs/SENTINEL.md, TDD + Sentinel review, worktree isolation) and the user wants to RUN implementation, not do it: read a roadmap/PRD/AGENTS.md/backlog, break work into tasks, spawn sub-agents, parallelize, invoke Sentinel, verify merges, track progress. Trigger on 'coordinate the project', 'execute this plan/roadmap', 'delegate everything', 'spawn agents', 'fleet mode', 'verify after merge', 'review this plan and coordinate' — especially when Sentinel or agents-template is present. DO trigger when given an existing plan/backlog/roadmap to execute (review-to-execute, not review-to-create). Do NOT trigger for non-agents-template/Sentinel projects, writing plans from scratch, writing code/tests, setting up AGENTS.md, refactoring, CI/CD config, or PR review."
+description: "Autonomous project coordinator for agents-template / Sentinel projects: delegates ALL implementation to sub-agents and drives the SENTINEL.md TDD-and-review workflow end-to-end. Use when a repo uses agents-template (docs/SENTINEL.md, TDD + Sentinel review, worktree isolation) and the user wants implementation RUN, not done by hand: read a roadmap/PRD/backlog, break work into tasks, spawn sub-agents, parallelize, invoke Sentinel, verify merges, track progress. Trigger on 'coordinate the project', 'execute this plan/roadmap', 'delegate everything', 'spawn agents', 'fleet mode', 'verify after merge' — especially when Sentinel or agents-template is present. DO trigger when given an existing plan/backlog to execute. Do NOT trigger for non-Sentinel projects, writing plans from scratch, writing code/tests, setting up AGENTS.md, refactoring, CI/CD config, or PR review."
 metadata:
-  version: "2.1.0"
+  version: "2.2.0"
   author: pedrofuentes
 compatibility: "Targets the agents-template Sentinel review contract — ruleset v1 (docs/SENTINEL.md): verdicts APPROVED/CONDITIONAL/REJECTED with a Status:-first-line report. Requires a project AGENTS.md defining branch isolation (worktrees/clones), TDD, and Sentinel review. Not for projects without Sentinel."
 ---
@@ -33,13 +33,15 @@ Before doing any work:
 
 1. **Read and validate `AGENTS.md` and the Sentinel contract.** This skill targets **agents-template / Sentinel** projects. Confirm AGENTS.md contains sections for: branch isolation strategy (worktrees, separate clones, or equivalent), TDD, **Sentinel review**, commit choreography, and ASK FIRST triggers — and confirm the Sentinel reviewer contract is present (`docs/SENTINEL.md` or an AGENTS.md Sentinel section). If AGENTS.md is missing/incomplete **or the project does not use Sentinel**, **STOP and report to the user** that this skill targets agents-template/Sentinel projects — do not proceed with defaults. **Contract-version check:** this skill targets **Sentinel ruleset v1** — verdicts `APPROVED/CONDITIONAL/REJECTED` reported on an authoritative first `Status:` line. If `docs/SENTINEL.md` exposes a different verdict set, a renamed/added verdict, or a changed report contract, **STOP and report a possible Sentinel-version mismatch** rather than guessing. Extract the full ASK FIRST trigger list and the branching/isolation commands, and restate both in your first message so you and the user share the same understanding.
 
-2. **Discover project tooling.** Identify the project's test, build, lint, and type-check commands from AGENTS.md, README, or config files (package.json, pyproject.toml, Cargo.toml, Makefile, etc.). Record these commands — you will use them in every verification step and include them in every sub-agent prompt.
+2. **Discover project tooling.** Identify the project's test, build, lint, and type-check commands from AGENTS.md, README, or config files (package.json, pyproject.toml, Cargo.toml, Makefile, etc.). Record these commands — you will use them in every verification step and include them in every sub-agent prompt. Also:
+   - **Verify PR/issue tooling.** Run `gh auth status` (or the platform equivalent named in AGENTS.md). If no PR/issue tooling is available → treat as a **§9 T3 one-time decision**: proceed with branch-only choreography (Sentinel verdicts and would-be issues recorded in `coordinator_log`) or stop. Before first use, ensure the `sentinel:*` labels exist (`gh label create`, idempotent); if labels cannot be created, file unlabeled issues with a `[sentinel:important]`/`[sentinel:minor]` title prefix.
+   - **Resolve the TOP tier once per run** (see §2-DELEGATE tier table). If a spawn at the TOP model errors as unavailable, record `TOP=<next model in the resolution chain>` in state (a `tier_resolution` entry in `coordinator_log`) and use that mapping for the rest of the run.
 
 3. **Locate the plan — discover before asking.** First scan the repo (read-only) for a plan/roadmap/backlog/spec or open issues (`ROADMAP.md`, `PLAN.md`, `docs/`, `gh issue list`). Present what you found and ask the user only to confirm or redirect; fall back to asking outright if nothing is found. If the user already supplied a plan **and** approval in their prompt, skip the re-ask and proceed (zero-shot).
 
 4. **Ask for reference documents.** Ask the user if there are additional documents you should read for context (PRDs, technical specs, design docs, etc.). Read everything provided before starting.
 
-5. **Build your task list.** For a vague goal, first elaborate a compact spec in ONE batched clarification round (problem, assumptions, non-goals, acceptance criteria) — ask only decision-critical ambiguities, then proceed with labeled assumptions (this is one upfront round, NOT a cadence; → `references/lifecycle-stages.md` LC-1). Produce a numbered task list with scope, acceptance criteria, dependencies, a **risk class** per task (code/docs/dependency/security/config/infra/migration/public-API; → `references/lifecycle-stages.md` LC-6), and **model tier** (Opus/Sonnet, justified). Present for approval before executing.
+5. **Build your task list.** For a vague goal, first elaborate a compact spec in ONE batched clarification round (problem, assumptions, non-goals, acceptance criteria) — ask only decision-critical ambiguities, then proceed with labeled assumptions (this is one upfront round, NOT a cadence; → `references/lifecycle-stages.md` LC-1). Produce a numbered task list with scope, acceptance criteria, dependencies, a **risk class** per task (code/docs/dependency/security/config/infra/migration/public-API; → `references/lifecycle-stages.md` LC-6), and **model tier** (STANDARD/LIGHT, justified; §2-DELEGATE). Present for approval before executing.
 
 6. **Select execution mode (derive, don't ask).** Once the task list is approved, derive the mode yourself from the dependency graph + the §4 isolation check: independent tasks + isolation present → **fleet**; dependent tasks or no isolation → **sequential**. Announce the chosen mode and why, then run — no second approval gate.
 
@@ -55,29 +57,37 @@ Start with AGENTS.md, then read all provided planning and reference documents. I
 ### §2-DELEGATE: Delegate, don't implement.
 For each task, spawn a **`general-purpose` sub-agent** with a self-contained prompt (full toolset for TDD, git, and PR creation). The implementer does NOT review or merge its own work: it opens a PR and stops, then **you (the coordinator) invoke Sentinel** as the independent non-author reviewer and spawn a merge agent (see §5-LIFECYCLE).
 
-**Model tier decision (default = Opus; Sonnet is the exception):**
+**Tier system (canonical — model names live ONLY in this table):**
 
-| Tier | Use when | NEVER when |
-|------|----------|------------|
-| **Opus** | ANY: >150 LOC, >3 files, shared interfaces/APIs, security/auth/concurrency, new patterns, 2+ deps, ambiguous specs, retry after lower-tier fail, platform-specific behavior (OS/shell/path), cross-path propagation (same concern across multiple handlers/renderers), user-facing output coherence (error/retry/success flows), atomicity/TOCTOU (read-then-write sequences) | — |
-| **Sonnet** | ALL FIVE: ≤150 LOC AND ≤3 files AND local-only AND existing pattern AND simple tests | Any Opus trigger applies |
-| **Haiku** | — | NEVER for implementation agents |
+Tiers are symbolic. Every other rule in this skill and its `references/` uses the tier name, never a model name; when models change, update ONLY the mapping column below. Tier order (for "reviewer ≥ implementer"): **FAST < LIGHT < STANDARD < TOP**.
 
-**Current top tier = Opus 4.8.** Wherever this skill says "Opus" or "the highest-capability model available" (e.g., the Sentinel rejection override below), use **Opus 4.8** — it is the strongest model currently available. If a newer, more capable model later supersedes it, treat that newer model as the top tier instead.
+| Tier | Role | Current mapping (resolution rule) |
+|------|------|-----------------------------------|
+| **TOP** | Escalation ceiling: final retry attempt, substantive Sentinel-rejection respawns (MR-3), live-routed modules (MR-2), design-discovery tasks (LC-2), highest-risk reviews | **The strongest model the Agent tool offers at run time** — resolve once per run at Startup (chain as of writing: Fable if available → else Opus) and record the result in state. |
+| **STANDARD** | The DEFAULT implementer and reviewer tier | Opus |
+| **LIGHT** | Implementation ONLY when the ALL-FIVE gate below holds | Sonnet |
+| **FAST** | Operational plumbing only (MR-4 whitelist); NEVER implements or reviews | Haiku |
 
-**ALWAYS:** Reviewer tier ≥ implementer tier. NEVER review Opus work with Sonnet.
+**Tier decision (default = STANDARD; LIGHT is the exception):**
+- **STANDARD required (LIGHT blocked) when ANY of:** >150 LOC, >3 files, shared interfaces/APIs, security/auth/concurrency, new patterns, 2+ deps, ambiguous specs, retry after LIGHT fail, platform-specific behavior (OS/shell/path), cross-path propagation (same concern across multiple handlers/renderers), user-facing output coherence (error/retry/success flows), atomicity/TOCTOU (read-then-write sequences).
+- **LIGHT allowed ONLY when ALL FIVE:** ≤150 LOC AND ≤3 files AND local-only AND existing pattern AND simple tests — and no STANDARD trigger applies.
+- **FAST NEVER implements or reviews.**
+
+**TOP-tier caveats (apply while TOP resolves to Fable):** its safety classifiers may refuse security/cyber-adjacent tasks (a refusal report, not an error) — on refusal, retry ONCE at STANDARD without consuming a retry-ladder attempt; still blocked → user. Fable turns can run many minutes; budget agent timeouts accordingly. When TOP resolves to the same model as STANDARD, "escalate to TOP" means "stay at TOP".
+
+**ALWAYS:** Reviewer tier ≥ implementer tier. NEVER review at a tier below the implementer's.
 
 **Retry state machine:**
 
 | Attempt | Tier | On failure → |
 |---------|------|-------------|
 | 1 | As assigned | Retry once at same tier with improved prompt |
-| 2 | Same tier | Escalate to Opus (or stay if already Opus) |
-| 3 | Opus | STOP → escalate to user |
+| 2 | Same tier | Escalate one tier (STANDARD→TOP; stay if already TOP) |
+| 3 | TOP | STOP → escalate to user |
 
 NEVER attempt 4. NEVER retry twice at a tier that already failed.
 
-**Sentinel rejection override:** When a PR is REJECTED by Sentinel, skip the normal retry ladder. Respawn the implementer using the **highest-capability model available** with the full rejection report **plus the previous Sentinel Report ID and the fix delta (`git diff <prev-SHA>..HEAD`)** so re-review is scoped to the change (see §ERROR). Fix **🔴 blockers only — never 🟡/🟢 in the same PR.** **Max 5 rejection cycles per task → escalate to user.**
+**Sentinel rejection override:** When a PR is REJECTED by Sentinel, skip the normal retry ladder. Respawn the implementer at **TOP** (severity-calibrated: trivial mechanical 🔴s retry at the same tier — → `references/model-routing.md` MR-3) with the full rejection report **plus the previous Sentinel Report ID and the fix delta (`git diff <prev-SHA>..HEAD`)** so re-review is scoped to the change (see §ERROR). Fix **🔴 blockers only — never 🟡/🟢 in the same PR.** **Max 5 rejection cycles per task → escalate to user.**
 
 **Pre-spawn complexity check (run before EVERY spawn):**
 Before spawning, verify the tier assignment by answering these questions:
@@ -87,7 +97,7 @@ Before spawning, verify the tier assignment by answering these questions:
 4. Does the task involve read-then-write sequences where concurrent callers could race?
 5. Does the task involve platform-specific behavior (OS detection, shell commands, file paths)?
 
-If YES to any → Opus. If the assigned tier is Sonnet but you answered YES, escalate before spawning.
+If YES to any → at least STANDARD. If the assigned tier is LIGHT but you answered YES, escalate before spawning.
 
 Include in every sub-agent prompt:
 - The specific goal and acceptance criteria
@@ -98,9 +108,9 @@ Include in every sub-agent prompt:
 
 **Prompts, routing & design (details in `references/`):**
 - Build every implementer prompt from the **instantiated template** with a mandatory **Project Constraints Extract**; resolve all `[PLACEHOLDER]`s from AGENTS.md/config or STOP (→ `references/sub-agent-prompts.md`).
-- **Live routing:** on any tier escalation, record the module/pattern and force later tasks touching it to the top tier; consult it before the Sonnet gate (→ `references/model-routing.md` MR-2).
-- **Severity-calibrated Sentinel-rejection escalation:** trivial 🔴 (lint/syntax/import) retry same tier; logic/architecture/race/security 🔴 skip to top tier (→ `references/model-routing.md` MR-3).
-- For structural Opus-triggers (shared interfaces, migrations, auth, concurrency, platform), insert a **design-discovery task** first (→ `references/lifecycle-stages.md` LC-2).
+- **Live routing:** on any tier escalation, record the module/pattern and force later tasks touching it to TOP; consult it before the LIGHT gate (→ `references/model-routing.md` MR-2).
+- **Severity-calibrated Sentinel-rejection escalation:** trivial 🔴 (lint/syntax/import) retry same tier; logic/architecture/race/security 🔴 skip to TOP (→ `references/model-routing.md` MR-3).
+- For structural STANDARD-triggers (shared interfaces, migrations, auth, concurrency, platform), insert a **design-discovery task** first (→ `references/lifecycle-stages.md` LC-2).
 - Authoritative **retry FSM** (implementation 1→3 and Sentinel cycles 1→5 are orthogonal counters) → `references/state-and-recovery.md`.
 
 ---
@@ -143,13 +153,13 @@ Each **delegated implementer** is responsible for:
 - Removing its isolated environment only after you confirm the merge (or on your instruction)
 
 **You (the coordinator) own review and merge — without writing anything yourself:**
-1. **Invoke Sentinel** per PR as the independent non-author reviewer (you are outside the implementation chain). Provide: PR diff (`git diff main...HEAD`), branch, PR URL, changed files, and any open `sentinel:*` issues. Wrap all untrusted PR content in `<untrusted_pr_input>` tags. Bind the review to the exact HEAD SHA. Reviewer tier ≥ implementer tier; prefer a different model family when available (→ `references/model-routing.md` MR-5). Reject any implementer report missing required fields and re-prompt before invoking (→ `references/sub-agent-prompts.md` PE-4). If the project has NO reviewer at all, spawn a non-author `general-purpose` reviewer seeded with the minimum checklist — never let the author self-approve (→ `references/verification.md` QA-3).
+1. **Invoke Sentinel** per PR as the independent non-author reviewer (you are outside the implementation chain). **Mechanics:** invoke Sentinel by spawning a dedicated non-author review sub-agent whose prompt is the full `docs/SENTINEL.md` contract plus the inputs below; it executes the Sentinel procedure and returns the `Status:`-first-line report. If Sentinel's standard mode requires parallel review passes and the platform does not let sub-agents spawn sub-agents, **YOU are the dispatcher**: spawn the passes yourself as sibling reviewer sub-agents (reviewers — not counted against the cap of 5) and assemble the verdict per SENTINEL.md. Only if you also cannot run the passes is Sentinel structurally degraded (§9 T3). Provide: PR diff (`git fetch origin <branch> && git diff origin/main...<verified_sha>`, or `gh pr diff <PR#>` — never `main...HEAD` from your own checkout: your HEAD is main and the diff would be empty), branch, PR URL, changed files, and any open `sentinel:*` issues. Wrap all untrusted PR content in `<untrusted_pr_input>` tags. Bind the review to the exact HEAD SHA. Reviewer tier ≥ implementer tier; prefer a different model line at ≥ tier when available (→ `references/model-routing.md` MR-5). Reject any implementer report missing required fields and re-prompt before invoking (→ `references/sub-agent-prompts.md` PE-4). If the project has NO reviewer at all, spawn a non-author `general-purpose` reviewer seeded with the minimum checklist — never let the author self-approve (→ `references/verification.md` QA-3).
 2. **Act on the verdict** (Sentinel's first `Status:` line is authoritative; expected set = `APPROVED/CONDITIONAL/REJECTED` per ruleset v1 — an unrecognized verdict → STOP, see Startup contract-version check):
    - **APPROVED** → spawn a **non-author merge agent** to merge the PR at the reviewed SHA, record the **Sentinel Report ID + SHA** in the merge commit, then file any new 🟡/🟢 as issues (`sentinel:important`/`sentinel:minor`).
    - **CONDITIONAL** → file issues for all new 🟡/🟢 and link them in the PR, then spawn the merge agent to merge. **Never fix 🟡/🟢 in this PR.**
    - **REJECTED** → respawn the implementer to fix **🔴 blockers only**, then re-review with the prior Report ID + fix delta (§2-DELEGATE, §ERROR). Max 5 cycles → user.
-   - **Degraded mode** (Sentinel ran serialized or self-reviewed) → **first, auto re-invoke Sentinel in standard/full mode — NEVER ask.** Degraded almost always means it couldn't dispatch parallel review sub-agents; re-running properly resolves it autonomously. **Only** if it stays degraded because the platform **structurally cannot** run review sub-agents (tool absent / API error after attempt) → treat as a **§9 T3 external-dependency discovery: surface ONCE per run** for a blanket decision (proceed under degraded for the rest of the run, or stop), then continue autonomously per that standing decision — no per-task ask, no cadence. A delegated implementer may NEVER self-use degraded mode; if one reports degraded, treat it as "stop + report" and re-invoke Sentinel yourself.
-3. The **merge agent** is non-author and single-purpose: it first enforces `verified_sha == reviewed SHA == merged source SHA` (stale evidence → re-run; → `references/verification.md` QA-1), merges the reviewed SHA, records Report ID + SHA, then tears down the implementer's environment. A clean merge may use a fast model (fast tier is for non-implementation/non-review ops ONLY; → `references/model-routing.md` MR-4); if it must resolve a conflict it rebases via a **new branch + cherry-pick** (NEVER force-push, §FORBIDDEN A1), re-tests, and you re-invoke Sentinel — at tier ≥ the implementer.
+   - **Degraded mode** (Sentinel ran serialized or self-reviewed) → **first, auto re-invoke Sentinel in standard/full mode — NEVER ask.** Degraded almost always means it couldn't dispatch parallel review sub-agents; re-running properly resolves it autonomously. **Only** if it stays degraded because the platform **structurally cannot** run review sub-agents (tool absent / API error after attempt) → treat as a **§9 T3 external-dependency discovery: surface ONCE per run** for a blanket three-option decision — (a) spawn the QA-3 fallback reviewer for the rest of the run (**recommended**; → `references/verification.md` QA-3), (b) proceed under degraded for the rest of the run, or (c) stop — then continue autonomously per that standing decision — no per-task ask, no cadence. A delegated implementer may NEVER self-use degraded mode; if one reports degraded, treat it as "stop + report" and re-invoke Sentinel yourself.
+3. The **merge agent** is non-author and single-purpose: it first enforces `verified_sha == reviewed SHA == merged source SHA` (stale evidence → re-run; → `references/verification.md` QA-1), merges the reviewed SHA, records Report ID + SHA, then tears down the implementer's environment. A clean merge may run at FAST tier (FAST is for non-implementation/non-review ops ONLY; → `references/model-routing.md` MR-4); if it must resolve a conflict it rebases via a **new branch + cherry-pick** (NEVER force-push, §FORBIDDEN A1), re-tests, and you re-invoke Sentinel — at tier ≥ the implementer.
 
 **Release-prep follow-on (after the approved list is fully merged):** you MAY spawn agents for REVERSIBLE release-readiness — docs, changelog, draft release notes, a version-bump task — surfaced as in-scope follow-on (§9 T6, never silent). Halt at §9 T4 for the irreversible publish/deploy/migration; a dependency-changing bump still hits §FORBIDDEN C2 (→ `references/lifecycle-stages.md` OA-6).
 
@@ -160,7 +170,7 @@ Each **delegated implementer** is responsible for:
 ### §6-VERIFY: Verify after EVERY merge — ALL applicable checks, in order.
 Conditional gates (coverage, security, migration) skip cleanly when the project has no such tooling.
 
-**Prerequisite:** run `git fetch origin` first (the merge agent merged the PR; your local `main` may be stale), then bind verification to the **merge commit SHA recorded with the Sentinel Report ID** (§8-PERSIST). Use that SHA below — never assume `main~1`.
+**Prerequisite:** run `git fetch origin` first (the merge agent merged the PR; your local `main` may be stale), then bind verification to the **merge commit SHA recorded with the Sentinel Report ID** (§8-PERSIST — the merge agent's completion report supplies the merge SHA; persist it, then check 1 confirms it on `origin/main`). Use that SHA below — never assume `main~1`.
 
 | # | Check | Command / Action | Fail → |
 |---|-------|-----------------|--------|
@@ -191,7 +201,7 @@ When a sequential task depends on a predecessor:
 ---
 
 ### §8-PERSIST: Track everything persistently.
-Use the session database to persist task state — conversation context is evictable; the DB is not. Update status `pending` → `in_progress` → `done` / `blocked`; every write asserts its expected 'from' state and changes exactly one row (→ `references/state-and-recovery.md` SP-6). Persist structured run-state — **branch, agent_id, reviewed/merge SHAs, Sentinel Report ID, reviewer model, model tier, attempt, worktree, timestamps** — in a `coordinator_state` table written **at spawn time**, and the running log (**Progress/Concerns/Questions/Suggestions** + live-routing entries) in a `coordinator_log` table — never in conversation or a file (§0). `CREATE TABLE IF NOT EXISTS`; fall back to the `todos` description if the DB is ephemeral/read-only (→ `references/state-and-recovery.md`). Before spawning any agent, query current state; after a restart, run **§8a-RESUME**.
+Use the session database to persist task state — conversation context is evictable; the DB is not. Update status `pending` → `in_progress` → `done` / `blocked`; every write asserts its expected 'from' state and changes exactly one row (→ `references/state-and-recovery.md` SP-6). Persist structured run-state — **branch, agent_id, reviewed/merge SHAs, Sentinel Report ID, reviewer model, model tier, attempt, worktree, timestamps** — in a `coordinator_state` table written **at spawn time**, and the running log (**Progress/Concerns/Questions/Suggestions** + tier-resolution entries) in a `coordinator_log` table, with MR-2 live-routing entries in `coordinator_routing` — never in conversation or a repo file (terminal DB-less fallback → `references/state-and-recovery.md` Storage model). `CREATE TABLE IF NOT EXISTS`; fall back to the `todos` description if the DB is ephemeral/read-only (→ `references/state-and-recovery.md`). Before spawning any agent, query current state; after a restart, run **§8a-RESUME**.
 
 ---
 
@@ -199,7 +209,7 @@ Use the session database to persist task state — conversation context is evict
 
 **Always-stop triggers** (any one fires → pause immediately):
 - T1. Plan ambiguity where interpretations diverge significantly
-- T2. Same task failed 2+ sub-agent attempts (the attempt≤3 ceiling of the canonical retry FSM — → `references/state-and-recovery.md`)
+- T2. Same task exhausted the canonical retry FSM — attempt 3 failed, or an §ERROR sub-limit hit (2 timeouts / 2 off-scope / 2 reverts) (→ `references/state-and-recovery.md`)
 - T3. External dependency discovered (API keys, infra changes, or Sentinel/review tooling structurally unavailable)
 - T4. Irreversible/expensive action: schema migrations, data deletion, public API changes, package publishes, deploys, secret rotation, **any dependency change (add/remove/upgrade — matches §FORBIDDEN C2)**, **edits to `AGENTS.md` or `docs/SENTINEL.md`**
 - T5. Any AGENTS.md "ASK FIRST" trigger (AGENTS.md is authoritative — above are examples, not exhaustive)
@@ -244,9 +254,9 @@ When a sub-agent fails, follow this ladder. ALWAYS clean up the failed agent's b
 
 | Failure | Action | Escalation |
 |---------|--------|------------|
-| **Wrong output** | Spawn NEW agent with corrected prompt + what went wrong. NEVER reuse failed agent. | Same tier once → Opus → user (see §2-DELEGATE retry table) |
-| **Sentinel REJECTED** | Respawn the implementer (highest-capability model) with: (1) the original task prompt, (2) a `## Sentinel Review — REJECTED` section with the **full, unedited rejection report**, (3) the **prior Report ID + fix delta** (`git diff <prev-SHA>..HEAD`) for scoped re-review. Fix **🔴 only**; never 🟡/🟢. | 5 total rejections → user |
-| **Sentinel degraded-mode** | **First, auto re-invoke Sentinel in standard/full mode — NEVER ask** (degraded usually means it couldn't dispatch parallel review sub-agents). If it stays degraded only because the platform **structurally cannot** run review sub-agents, treat as **§9 T3** (external dependency): surface **ONCE per run** for a blanket decision, then proceed per that decision. A delegated implementer may never self-use degraded — discard and re-invoke Sentinel yourself in standard mode. | Structural unavailability → one-time T3 decision per run |
+| **Wrong output** | Spawn NEW agent with corrected prompt + what went wrong. NEVER reuse failed agent. | Same tier once → TOP → user (see §2-DELEGATE retry table) |
+| **Sentinel REJECTED** | Respawn the implementer at **TOP** (trivial mechanical 🔴s → same tier; substantive → TOP; → `references/model-routing.md` MR-3) with: (1) the original task prompt, (2) a `## Sentinel Review — REJECTED` section with the **full, unedited rejection report**, (3) the **prior Report ID + fix delta** (`git diff <prev-SHA>..HEAD`) for scoped re-review. Fix **🔴 only**; never 🟡/🟢. | 5 total rejections → user |
+| **Sentinel degraded-mode** | **First, auto re-invoke Sentinel in standard/full mode — NEVER ask** (degraded usually means it couldn't dispatch parallel review sub-agents; remember YOU can dispatch the passes yourself, §5 step 1). If it stays degraded only because the platform **structurally cannot** run review sub-agents, treat as **§9 T3** (external dependency): surface **ONCE per run** for the blanket three-option decision (QA-3 fallback reviewer — recommended / proceed degraded / stop), then proceed per that decision. A delegated implementer may never self-use degraded — discard and re-invoke Sentinel yourself in standard mode. | Structural unavailability → one-time T3 decision per run |
 | **Agent timeout** | Clean committed progress on the branch → ONE same-tier takeover + full re-verify; dirty/unknown → discard + respawn (→ `references/state-and-recovery.md` timeout-salvage). | 2 timeouts → user |
 | **Off-scope** (modified undeclared files) | NEVER merge. Clean up. Respawn with tighter constraints. | 2 off-scope → user |
 | **Merged task broke main** | Apply flaky triage on test failures first (§6-VERIFY). Then spawn a **non-author revert agent** to `git revert <merge-commit>` (you never revert/`reset` on main yourself). Respawn with the reverted-merge SHA + revert SHA + failed checks in a `## Prior Attempt — REVERTED` section (→ `references/parallel-execution.md` GW-4). Update §8-PERSIST. | Reverted twice → user |
@@ -269,7 +279,7 @@ Key points (AGENTS.md is authoritative if these conflict):
 - You may NOT spawn sub-agents, and you may NOT use Sentinel "degraded mode" — if you cannot complete the task, STOP and report to the coordinator.
 - If the coordinator returns a Sentinel REJECTED report, fix the 🔴 blockers ONLY (never 🟡/🟢), re-commit on the same branch, and report the new HEAD SHA.
 - Do NOT remove your worktree until the coordinator confirms the merge.
-- Commit trailer: Co-authored-by: Copilot <175574315+pedrofuentes@users.noreply.github.com>
+- Commit trailer (exact, from AGENTS.md): [COMMIT_TRAILER]
 
 ## Forbidden Operations (require explicit user approval — NEVER do silently)
 - git push --force / --force-with-lease, git reset --hard, git clean -fdx, history rewrites on pushed branches
@@ -284,7 +294,7 @@ If a task requires any of the above, STOP and report to the coordinator.
 Every **implementer** prompt is built from the **instantiated template** (→ `references/sub-agent-prompts.md`) and MUST contain these sections (in order), plus a **Project Constraints Extract** (exact ASK-FIRST triggers, isolation commands, review choreography, commit trailer, and test/build/lint/typecheck commands copied — not summarized — from AGENTS.md; PE-2) and a **Docs-Impact** field (LC-3). Merge/revert agents get a scoped single-operation prompt instead.
 
 1. **Task** — `T-[ID]: [one-sentence goal]`
-2. **Model Tier** — OPUS/SONNET with justification. Include: "If more complex than expected, STOP and report to coordinator."
+2. **Model Tier** — TOP/STANDARD/LIGHT with justification. Include: "If more complex than expected, STOP and report to coordinator."
 3. **Branch & PR** — isolation method per AGENTS.md; branch from current `main` HEAD. Open a PR, then STOP and report the PR URL + HEAD SHA — do NOT invoke Sentinel or merge.
 4. **Depends On** — predecessor task IDs and what they changed (§7-CHAIN)
 5. **Context** — background, interfaces, schemas, current state of main
@@ -304,7 +314,7 @@ When all tasks are done (or if you stop early), present the user with:
 2. The full log of concerns, questions, and suggestions
 3. Any tasks that remain incomplete and why
 4. Recommended next steps
-5. **Tier accuracy retro** — compare model tier assigned vs actual Sentinel cycle count per task. If Sonnet tasks averaged significantly more cycles than Opus tasks, note which complexity signals were missed (cross-path propagation, concurrency, platform-specific, etc.). Present this analysis to the user as input for future tier decisions.
+5. **Tier accuracy retro** — compare model tier assigned vs actual Sentinel cycle count per task. If LIGHT tasks averaged significantly more cycles than STANDARD/TOP tasks, note which complexity signals were missed (cross-path propagation, concurrency, platform-specific, etc.). Present this analysis to the user as input for future tier decisions.
 6. **Cleanup sweep result** — confirm no stale worktrees or session-owned merged branches remain; list what was removed and anything needing user approval (e.g., environments outside this workflow).
 7. **Roadmap continuation** — if a roadmap defines further phases, the sweep is per-phase; carry the phase summary forward and re-plan the next phase (§ROADMAP).
 
@@ -328,13 +338,13 @@ These are the rules most likely to degrade during long sessions. Run through the
 If anything feels unclear, re-read §0 ABSOLUTE RULES at the top.
 
 1. **§0:** You NEVER edit, commit, push, or merge yourself. You DO invoke Sentinel and spawn the merge/revert agents. ALWAYS delegate writes.
-2. **§2-DELEGATE:** Default to Opus. Sonnet ONLY when ALL 5 criteria met. NEVER Haiku. Reviewer ≥ implementer.
+2. **§2-DELEGATE:** Default STANDARD. LIGHT only when ALL 5 criteria met. NEVER FAST for implementation or review. Escalations go to TOP (resolved once at Startup). Reviewer ≥ implementer.
 3. **§4-PARALLEL:** HARD CAP 5 implementers (default ceiling; raise only with user approval). File-overlap pre-flight before fleeting. No isolation in AGENTS.md → no fleet mode.
 4. **§6-VERIFY:** `git fetch` first; ALL applicable checks after EVERY merge (incl. SECURITY/MIGRATION if configured, CLEANUP). Flaky-triage before revert; confirmed failure → revert agent (you never revert/`reset` on main).
 5. **§7-CHAIN:** Pass predecessor context forward. Branch from current `main` HEAD.
 6. **§8-PERSIST:** Persist structured state at spawn time (`coordinator_state`/`coordinator_log`); guarded transitions. After a restart, run §8a-RESUME. DB survives; context doesn't.
 7. **§9-PAUSE:** Run to completion — NEVER pause for periodic "continue / pause / stop?" check-ins. Stop ONLY on safety triggers (T1–T6, §FORBIDDEN, §ERROR). NEVER add tasks silently.
 8. **§FORBIDDEN:** A1–C2 require explicit user approval THIS TURN. No exceptions.
-9. **§ERROR / §5:** Implementer opens a PR and STOPS; YOU invoke Sentinel, then a merge agent merges on APPROVED/CONDITIONAL. **REJECTED:** respawn implementer, fix 🔴 only, re-review with prior Report ID + fix delta; **5×** → user. **Degraded mode:** auto re-invoke Sentinel in standard mode (never ask); only structural unavailability → one-time §9 T3 decision per run. Clean up failed envs before retry.
+9. **§ERROR / §5:** Implementer opens a PR and STOPS; YOU invoke Sentinel, then a merge agent merges on APPROVED/CONDITIONAL. **REJECTED:** respawn implementer (trivial mechanical blockers → same tier; substantive → TOP; MR-3), fix 🔴 only, re-review with prior Report ID + fix delta; **5×** → user. **Degraded mode:** auto re-invoke Sentinel in standard mode (never ask); only structural unavailability → one-time §9 T3 decision per run. Clean up failed envs before retry.
 10. **AGENTS.md is law.** If missing or incomplete: STOP. Do not default.
 11. **References:** before applying any rule that points to a `references/` file, load that file.

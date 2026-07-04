@@ -50,7 +50,7 @@ If the user already supplied a complete plan/PRD, skip questions entirely and de
 
 ## LC-2 — Design / Architecture Discovery Task
 
-When ANY task is Opus-triggering for **structural** reasons — shared interfaces/APIs, schema or data
+When ANY task hits a STANDARD trigger for **structural** reasons — shared interfaces/APIs, schema or data
 migrations, auth/security, concurrency/atomicity, or platform-specific behavior — insert a
 **first-class design-discovery task** that runs (and merges, if it produces docs) BEFORE the
 implementation tasks it informs. Delegate it like any task (it never edits product code beyond docs).
@@ -65,7 +65,7 @@ Design-discovery agent output (a doc PR or a structured report):
 - **Refined implementation tasks** — concrete, scoped, tiered tasks replacing the placeholder.
 
 Discovery almost always reveals work not in the approved list. **New work → §9 T6**: surface it and
-request approval; NEVER add tasks silently. Tier the design task itself Opus (it is structural by
+request approval; NEVER add tasks silently. Tier the design task itself TOP (it is structural by
 definition). Reviewer ≥ implementer applies to its doc PR too.
 
 ---

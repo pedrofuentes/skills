@@ -6,7 +6,8 @@ coordinator must persist run-state, restart mid-run, decide a retry, or salvage 
 
 This file owns the **authoritative retry FSM** (`#retry-fsm`). Other references link here instead of
 re-specifying retry counts. It never weakens a guardrail: all reconciliation is **read-only** (§0),
-state lives in the DB (never in a file — a file write would violate §0), and resume is
+state lives in the DB (never in a repo file — §0 protects the project; see the terminal fallback
+below for DB-less platforms), and resume is
 **crash-recovery only — NOT a periodic cadence** (§9 keeps no pause cadence).
 
 ---
@@ -18,28 +19,48 @@ Persist structured run-state in two custom tables. The runtime DB may be ephemer
 fall back to stuffing the same fields as a structured block inside the existing `todos.description`
 (the v1.x approach) and continue. Never abort a run because the custom tables are unavailable.
 
+**Terminal fallback — no session DB or todos tool at all:** keep the approved task list and
+per-task state in a `coordinator-state.json` in a scratch/temp location **OUTSIDE the repository**
+(never in the working tree — §0 protects the project, not the coordinator's own scratch space),
+and tell the user ONCE that crash-resume durability is reduced. Never write state into repo files.
+
 ```sql
 -- SP-3 / RR-2: structured ledger — one row per task attempt-lifecycle.
 CREATE TABLE IF NOT EXISTS coordinator_state (
   todo_id            TEXT PRIMARY KEY,   -- FK to todos.id
   branch             TEXT,               -- expected branch name (persisted at SPAWN time)
   agent_id           TEXT,               -- in-flight implementer/merge/revert agent id (at SPAWN)
-  model_tier         TEXT,               -- 'opus' | 'sonnet' (implementer tier)
+  model_tier         TEXT,               -- 'top' | 'standard' | 'light' (implementer tier, SKILL.md §2)
   attempt            INTEGER DEFAULT 1,  -- implementation-attempt counter (see #retry-fsm)
+  sentinel_cycle     INTEGER DEFAULT 0,  -- cumulative Sentinel-REJECTED counter (see #retry-fsm)
   worktree_path      TEXT,               -- isolated env to reconcile/clean on resume
   commit_sha         TEXT,               -- branch HEAD reported by implementer
-  merge_sha          TEXT,               -- merge commit SHA (set at §6-VERIFY check 1)
+  merge_sha          TEXT,               -- merge SHA from the merge agent's completion report;
+                                         -- persisted on receipt, confirmed at §6-VERIFY check 1
   sentinel_report_id TEXT,               -- Sentinel Report ID bound to the merged SHA
+  reviewer_model     TEXT,               -- model used for the Sentinel review (MR-5 / retro)
   spawned_at         TEXT,               -- ISO-8601, set at spawn
   completed_at       TEXT                -- ISO-8601, set when task reaches a terminal state
 );
 
 -- SP-4: durable running log — replaces the evictable §8-PERSIST conversation log.
+-- 'routing' covers tier_resolution entries (Startup TOP resolution) and routing notes.
 CREATE TABLE IF NOT EXISTS coordinator_log (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   timestamp TEXT NOT NULL,               -- ISO-8601
-  category  TEXT NOT NULL CHECK (category IN ('progress','concern','question','suggestion')),
+  category  TEXT NOT NULL CHECK (category IN ('progress','concern','question','suggestion','routing')),
   entry     TEXT NOT NULL
+);
+
+-- MR-2: session-scoped live-routing entries (see references/model-routing.md).
+CREATE TABLE IF NOT EXISTS coordinator_routing (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  module      TEXT,                      -- path/glob the failing task touched
+  pattern     TEXT,                      -- concern that broke (e.g. 'TOCTOU', 'migration')
+  failed_tier TEXT,
+  routed_tier TEXT,                      -- always 'TOP'
+  reason      TEXT,                      -- one line + originating task id
+  created_at  TEXT                       -- ISO-8601
 );
 ```
 
@@ -111,6 +132,11 @@ Probe commands (never mutate): `git fetch --prune` (read-only sync), `git branch
 `git branch --merged origin/main`, `git log origin/main --oneline`, `git log <branch> --oneline`,
 `git worktree list`.
 
+**Squash/rebase-merge caveat:** squash- or rebase-merged branches NEVER appear in
+`git branch --merged origin/main`. Before concluding a worker died (row 3), also probe
+`git log origin/main --grep='<branch or report_id>'` and/or `gh pr view <branch> --json state,mergedAt`;
+a squash-merged task reconciles as merged → capture the squash commit SHA and re-verify as in row 1.
+
 **3. Finish or roll back an interrupted merge (RR-2).** If a merge was mid-flight (branch merged but
 verification never recorded), either confirm it via §6-VERIFY or delegate a revert agent — the
 coordinator never merges/reverts itself (§0). Record the outcome in `coordinator_state`.
@@ -133,22 +159,24 @@ The authoritative reconciliation of the §2-DELEGATE retry table, §9 T2 ("2+ at
   discarded timeout). Range **1→3**.
 - **`sentinel_cycle`** — Sentinel REJECTED fix-and-re-review counter. Range **1→5**, INDEPENDENT of
   `attempt`. A rejection ladder cycle is NOT an implementation attempt and does not increment
-  `attempt`; an implementation failure resets the rejection context for the new attempt.
+  `attempt`. An implementation failure discards the pending rejection report for the new attempt,
+  but **`sentinel_cycle` is cumulative per task and never resets** (max 5 total, per §2/§ERROR).
 
 **Implementation-failure ladder (the `attempt` counter):**
 
 | `attempt` | Tier | On failure → next |
 |-----------|------|-------------------|
 | 1 | as assigned | retry once, same tier, improved prompt → `attempt=2` |
-| 2 | same tier | escalate to Opus (or stay Opus) → `attempt=3` |
-| 3 | Opus | **terminal:** STOP → `blocked`, escalate to user |
+| 2 | same tier | escalate one tier (STANDARD→TOP; stay if already TOP) → `attempt=3` |
+| 3 | TOP | **terminal:** STOP → `blocked`, escalate to user |
 
 **Never attempt 4. Never retry twice at a tier that already failed.** Each retry spawns a NEW agent
 (never reuse a failed one) and forwards what went wrong (and, for a reverted merge, GW-4's
 `## Prior Attempt — REVERTED` SHA + reason).
 
 **Sentinel REJECTED ladder (the `sentinel_cycle` counter)** coexists with the above:
-respawn the implementer at the **highest-capability model**, fix **🔴 only** (never 🟡/🟢), re-review
+respawn the implementer at **TOP** (trivial mechanical 🔴s → same tier; →
+`references/model-routing.md` MR-3), fix **🔴 only** (never 🟡/🟢), re-review
 with the prior Report ID + fix delta (`git diff <prev-SHA>..HEAD`). **Max 5 cycles → `blocked`, user.**
 This ladder bypasses the `attempt` ladder (§2-DELEGATE "Sentinel rejection override").
 
@@ -177,5 +205,6 @@ inspect the branch **read-only** (`git branch --list <branch>`, `git log <branch
 
 **Bounded to ONE takeover.** If the single takeover also times out (or a 2nd timeout occurs on the
 task), stop salvaging and fall back to the normal `#retry-fsm` escalation — and the §ERROR "2
-timeouts → user" limit applies. The coordinator performs no writes during salvage; all commits,
-cleanup, and merges go through agents (§0).
+timeouts → user" limit applies. The coordinator performs no commits or merges during salvage;
+branch deletion and worktree removal for session-created environments may be done directly per
+§0/GW-5, or delegated.

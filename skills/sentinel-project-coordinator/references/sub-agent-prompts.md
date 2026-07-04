@@ -22,7 +22,7 @@ agent receives — there is no "paraphrase vs. verbatim" judgment call and no bu
 ```
 ## Task — T-[TASK_ID]: [ONE_SENTENCE_GOAL]
 
-## Model Tier — [OPUS|SONNET]: [JUSTIFICATION].
+## Model Tier — [TOP|STANDARD|LIGHT]: [JUSTIFICATION].
 If this proves more complex than scoped, STOP and report to the coordinator.
 
 ## Project Constraints Extract   (see "Project Constraints Extract" below — copy, don't summarize)

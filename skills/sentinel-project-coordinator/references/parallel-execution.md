@@ -86,8 +86,8 @@ worktrees.
 Before the **first fleet spawn of the session**, empirically verify isolation instead of trusting the
 AGENTS.md text check alone.
 
-1. Spawn a **throwaway probe agent** (single-purpose, may use a fast tier per
-   `references/model-routing.md`): create one worktree **exactly per AGENTS.md's isolation method**,
+1. Spawn a **throwaway probe agent** (single-purpose, may run at FAST tier per
+   `references/model-routing.md` MR-4): create one worktree **exactly per AGENTS.md's isolation method**,
    run the **project's test command** inside it while main's environment is also live.
 2. The probe reports contention against main's env:
    - **Ports** — does the suite bind a fixed port already held by main? (`EADDRINUSE`)
@@ -98,7 +98,7 @@ AGENTS.md text check alone.
      `coordinator_state.isolation_probe = ok`); do not re-probe.
    - **Contention** → **drop to sequential, warn the user** with the specific collision; record the
      probe result so the rest of the run stays sequential unless the user resolves isolation.
-4. Tear down the probe worktree via the PC-GW-5 teardown sequence.
+4. Tear down the probe worktree via the GW-5 teardown sequence.
 
 ---
 
@@ -139,12 +139,16 @@ sweep:
 
 ```
 git fetch --prune origin
-git branch --merged origin/main | Select-String <branch>   # confirm merged before deleting
-git branch -d <branch>                                      # local; -d refuses if unmerged
-git push origin --delete <branch>                           # remote
+git branch --list '<branch>' --merged origin/main   # non-empty output = confirmed merged
+git branch -d <branch>                              # local; -d refuses if unmerged
+git push origin --delete <branch>                   # remote
 ```
 
-- Use `-d` (safe delete), **never `-D`** — it refuses to drop an unmerged branch, which is the guard.
+- Use `-d` (safe delete), not `-D` — it refuses to drop an unmerged branch, which is the guard.
+- **Squash/rebase-merge carve-out:** squash- or rebase-merged branches never show in `--merged`
+  and `-d` refuses to delete them. ONLY THEN, after confirming the merge via the recorded merge
+  SHA or `gh pr view <branch> --json state,mergedAt`, `git branch -D <branch>` is permitted —
+  the merge confirmation replaces `-d`'s ancestry guard. Never `-D` without that confirmation.
 - **Ignore "not found" / "remote ref does not exist"** errors (already gone is success).
 - Never delete a branch this session did not create, and never one not confirmed merged.
 
