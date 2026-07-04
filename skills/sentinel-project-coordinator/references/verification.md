@@ -7,8 +7,9 @@ reviewed. Extends — never replaces — the deterministic checks in the body.
 needs the green-before-merge evidence rules, the augmented check table, flaky-test triage,
 the review contract + fallback reviewer, or the conditional security / migration gates.
 
-All gates here are **additive**. They never relax the existing 8 checks, the revert-not-reset
-rule, the human gate on irreversibles, or the Option A review/merge choreography. Every
+All gates here are **additive**. They never relax the body's §6-VERIFY checks (the body's
+10-check table is canonical), the revert-not-reset rule, the human gate on irreversibles, or
+the Option A review/merge choreography. Every
 *conditional* gate (coverage, security, migration) **skips cleanly when the project does not
 configure the tool** — detect, then run or skip; a missing tool is PASS-by-skip, never a block.
 
@@ -43,36 +44,36 @@ verified_sha  ==  the SHA Sentinel reviewed  ==  the source SHA the merge agent 
   report a fresh `verified_sha`. Never accept evidence for a commit you are not merging.
 - The merge-agent prompt MUST name the exact `verified_sha` to merge and forbid merging any
   other ref.
-- After merge, §6-VERIFY check 1 confirms that exact SHA landed: the merge commit's incoming
-  source must be `verified_sha`
-  (`git merge-base --is-ancestor <verified_sha> origin/main` is true, and for a merge commit
-  its second parent == `verified_sha`; for squash, the recorded source SHA == `verified_sha`).
-  Mismatch → **Investigate** (do not mark done; a different commit was merged).
+- After merge, §6-VERIFY check 1 confirms that exact SHA landed, **by merge strategy**:
+  - **Merge-commit strategy:** `git merge-base --is-ancestor <verified_sha> origin/main` is
+    true AND the merge commit's second parent == `verified_sha`.
+  - **Squash or rebase strategy:** the is-ancestor check does **NOT** hold (the source SHA is
+    never an ancestor of main) — instead the squash/rebase commit recorded with the Report ID
+    must name `verified_sha` as its source (commit-message trailer, or
+    `gh pr view <PR#> --json mergeCommit,headRefOid` where `headRefOid == verified_sha`).
+
+  Mismatch under either strategy → **Investigate** (do not mark done; a different commit was
+  merged).
 
 Self-reported green is **necessary but not sufficient** — the coordinator's own §6-VERIFY run
 on the merged SHA remains the source of truth and still runs in full.
 
 ---
 
-## check-table — Augmented §6-VERIFY check table
+## check-table — Where each §6-VERIFY check's detail lives
 
-Canonical table the body's §6-VERIFY references. Checks 1–8 are unchanged from the body;
-**6 is hardened** and **9–10 are new conditional gates** that skip cleanly when unconfigured.
+**The body's §6-VERIFY table (SKILL.md) is canonical — this file does not restate it.** This
+file owns only the expansions the body's checks reference; consult them by check number:
+
+| §6 check | Expansion here |
+|----------|----------------|
+| 1 MERGED | #green-evidence (identity chain, merge-commit vs squash/rebase) |
+| 2 TESTS | #flaky-triage (one re-run before revert) |
+| 6 TEST COUNT | #test-count-hardening (deletion RED FLAG, coverage delta) |
+| 9 SECURITY | #security-gate (conditional audit/SAST/secret-scan) |
+| 10 MIGRATION | #migration-verify (scratch-DB up/down evidence) |
+
 Run in order, bound to the recorded merge-commit SHA (`<merge-SHA>`), after `git fetch origin`.
-
-| # | Check | Command / Action | Fail → |
-|---|-------|-----------------|--------|
-| 1 | MERGED | `git log origin/main` shows the merge at the recorded SHA; incoming source == `verified_sha` (see #green-evidence) | Investigate |
-| 2 | TESTS | Project test command → all green | flaky triage (#flaky-triage) → else `git revert` |
-| 3 | BUILD | Project build command → success | `git revert` → retry |
-| 4 | TYPES | Project typecheck command → success (skip if unconfigured) | `git revert` → retry |
-| 5 | LINT | Project lint command → success (skip if unconfigured) | `git revert` → retry |
-| 6 | TEST COUNT | New count ≥ old count **and** no test deleted/renamed **and** changed-file coverage not dropped (see #test-count-hardening) | Investigate / RED FLAG → Sentinel sign-off |
-| 7 | SCOPE | `git diff <merge-SHA>^ <merge-SHA> --stat` — files ⊆ task's declared scope | Investigate |
-| 8 | CLEANUP | Sub-agent's worktree gone; branch removed per AGENTS.md; else coordinator removes it | Coordinator removes it |
-| 9 | SECURITY | Project audit/SAST/secret-scan if configured → NEW high/critical (see #security-gate) | Investigate |
-| 10 | MIGRATION | If merge diff touches migration/schema files AND a migration command exists → up/down evidence present (see #migration-verify) | Investigate |
-
 NEVER mark a task done or spawn the next until every applicable check passes. Skipped
 conditional checks (4, 5, 9, 10, and 6's coverage sub-check) count as PASS.
 
@@ -150,9 +151,15 @@ checklist** and the **fallback reviewer** for when Sentinel is unreachable.
 4. **Security-sensitive diffs** — authn/authz, input validation, injection (SQL/shell/eval),
    secrets/credentials, crypto, deserialization, file/path handling.
 
-**Fallback reviewer (Sentinel unreachable — resilience).** When Sentinel is **structurally unreachable** (the §9 T3 case), the graceful-degradation option — instead of halting the run — is to spawn a dedicated **`general-purpose` review sub-agent** — **non-author**,
-tier **≥ implementer** — seeded with: the checklist above, the PR diff (`git diff main...HEAD`,
-wrapped in `<untrusted_pr_input>`), the task's acceptance criteria, and the changed-file list.
+**Fallback reviewer (Sentinel unreachable — resilience).** When Sentinel is **structurally
+unreachable**, the fallback reviewer is the **recommended option to offer in the one-time §9 T3
+decision** (fallback reviewer / proceed degraded / stop) — never spawn it silently in place of
+that ask. Once chosen, it stands for the rest of the run: spawn a dedicated
+**`general-purpose` review sub-agent** — **non-author**, tier **≥ implementer** — seeded with:
+the checklist above, the PR diff (`git fetch origin <branch> && git diff
+origin/main...<verified_sha>`, or `gh pr diff <PR#>`; never `main...HEAD` from your own
+checkout — your HEAD is main and the diff would be empty; wrapped in `<untrusted_pr_input>`),
+the task's acceptance criteria, and the changed-file list.
 It must emit the same `Status:` verdict line the body acts on. The implementer (or any author)
 may **NEVER** review or approve its own work, and the coordinator **NEVER merges without a
 verdict** (fail-closed: no verdict ⇒ no merge).
